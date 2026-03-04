@@ -1,29 +1,28 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Bike Quest: Delivery Hero</title>
+    <title>Bike Quest: City Streets</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
-        #ui { position: absolute; top: 20px; left: 20px; color: #fff; background: rgba(0,0,0,0.8); padding: 20px; border: 2px solid #00ffcc; border-radius: 5px; width: 250px; }
-        #inventory { position: absolute; bottom: 20px; right: 20px; color: #ff00ff; background: rgba(0,0,0,0.8); padding: 15px; border: 2px solid #ff00ff; }
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #fff; background: rgba(0,0,0,0.8); padding: 20px; border: 2px solid #00ffcc; border-radius: 10px; width: 250px; }
+        #inventory { position: absolute; bottom: 20px; right: 20px; color: #ff00ff; background: rgba(0,0,0,0.8); padding: 15px; border: 2px solid #ff00ff; border-radius: 10px; }
         .stat { color: #ffff00; font-weight: bold; }
-        .controls { font-size: 12px; color: #aaa; margin-top: 10px; }
+        #label-container { position: absolute; top: 0; left: 0; pointer-events: none; }
+        .world-label { position: absolute; color: white; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 5px; font-weight: bold; white-space: nowrap; }
     </style>
 </head>
 <body>
     <div id="ui">
-        <div style="font-size: 18px; border-bottom: 1px solid #00ffcc; margin-bottom: 10px;">QUEST LOG</div>
-        <div id="quest-text">Go to the Store!</div>
+        <div style="font-size: 18px; border-bottom: 1px solid #00ffcc; margin-bottom: 10px;">NEIGHBORHOOD HERO</div>
+        <div id="quest-text">Follow the road to the Store!</div>
         <p>Wallet: $<span id="money" class="stat">0</span></p>
         <p>Bike Speed: <span id="speed-lvl" class="stat">1</span></p>
-        <div class="controls">
-            [WASD] Ride | [U] Upgrade Bike ($50)<br>[I] Upgrade Bag ($40)
-        </div>
     </div>
     <div id="inventory">
         <strong>BACKPACK</strong><br>
         Items: <span id="storage-count">0</span> / <span id="max-storage">3</span>
     </div>
+    <div id="label-container"></div>
 
     <script type="importmap">
         { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -33,14 +32,9 @@
     import * as THREE from 'three';
 
     // --- GAME STATE ---
-    let gameState = {
-        money: 0,
-        bagItems: 0,
-        maxBag: 3,
-        speedLevel: 1,
-        atStore: false,
-        questActive: true
-    };
+    let gameState = { money: 0, bagItems: 0, maxBag: 3, speedLevel: 1 };
+    const traffic = [];
+    const labels = [];
 
     // --- SCENE SETUP ---
     const scene = new THREE.Scene();
@@ -50,94 +44,85 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    // Light
-    const light = new THREE.DirectionalLight(0xffffff, 1.2);
-    light.position.set(10, 20, 10);
-    scene.add(light);
-    scene.add(new THREE.AmbientLight(0x606060));
+    scene.add(new THREE.AmbientLight(0x707070));
+    const sun = new THREE.DirectionalLight(0xffffff, 1);
+    sun.position.set(50, 100, 50);
+    scene.add(sun);
 
-    // Ground & Roads
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshStandardMaterial({ color: 0x228b22 }));
+    // --- WORLD BUILDING ---
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshStandardMaterial({ color: 0x2e7d32 }));
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
 
-    // The Grocery Store (Yellow)
-    const store = new THREE.Mesh(new THREE.BoxGeometry(15, 8, 15), new THREE.MeshStandardMaterial({ color: 0xffdb58 }));
-    store.position.set(40, 4, -50);
+    function createRoad(w, h, x, z, rot = 0) {
+        const road = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+        road.rotation.x = -Math.PI / 2;
+        road.rotation.z = rot;
+        road.position.set(x, 0.02, z);
+        scene.add(road);
+    }
+
+    // Main Street and Side Street (The Turn)
+    createRoad(20, 200, 0, 0); // Straight road
+    createRoad(20, 100, 50, -100, Math.PI/2); // Turn to the right
+
+    function createHouse(x, z, color, name) {
+        const house = new THREE.Group();
+        const base = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 10), new THREE.MeshStandardMaterial({ color: color }));
+        base.position.y = 4;
+        house.add(base);
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(8, 5, 4), new THREE.MeshStandardMaterial({ color: 0x442200 }));
+        roof.position.y = 10.5;
+        roof.rotation.y = Math.PI / 4;
+        house.add(roof);
+        house.position.set(x, 0, z);
+        scene.add(house);
+        return house;
+    }
+
+    // Neighbors
+    const neighbors = [
+        createHouse(-20, 20, 0x4287f5, "Neighbor A"),
+        createHouse(-20, -20, 0x9b59b6, "Neighbor B"),
+        createHouse(20, 50, 0xe67e22, "Neighbor C")
+    ];
+
+    // Grocery Store
+    const store = new THREE.Mesh(new THREE.BoxGeometry(20, 12, 20), new THREE.MeshStandardMaterial({ color: 0xffd700 }));
+    store.position.set(100, 6, -100);
     scene.add(store);
 
-    // Neighbor's House (Blue - Delivery Point)
-    const house = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 10), new THREE.MeshStandardMaterial({ color: 0x4169e1 }));
-    house.position.set(-30, 3, 20);
-    scene.add(house);
+    // Floating UI Label for Store
+    const storeLabel = document.createElement('div');
+    storeLabel.className = 'world-label';
+    storeLabel.innerHTML = "🛒 GROCERY STORE";
+    document.getElementById('label-container').appendChild(storeLabel);
+    labels.push({ element: storeLabel, position: new THREE.Vector3(100, 15, -100) });
+
+    // --- TRAFFIC ---
+    function createNPCVehicle(zPos, speed, color) {
+        const car = new THREE.Mesh(new THREE.BoxGeometry(4, 3, 7), new THREE.MeshStandardMaterial({ color: color }));
+        car.position.set(5, 1.5, zPos);
+        scene.add(car);
+        traffic.push({ mesh: car, speed: speed });
+    }
+    createNPCVehicle(0, 0.5, 0xff0000);
+    createNPCVehicle(-80, 0.3, 0xffffff);
 
     // --- PLAYER ---
     const player = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.5, 0.8), new THREE.MeshStandardMaterial({ color: 0xff4444 }));
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2, 0.8), new THREE.MeshStandardMaterial({ color: 0x222222 }));
     body.position.y = 1.5;
     player.add(body);
-    const bikeBase = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 1.8), new THREE.MeshStandardMaterial({ color: 0x333333 }));
-    bikeBase.position.y = 0.5;
-    player.add(bikeBase);
+    const bike = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 2), new THREE.MeshStandardMaterial({ color: 0x00ffcc }));
+    bike.position.y = 0.5;
+    player.add(bike);
     scene.add(player);
 
-    // --- CARS (New!) ---
-    function createCar(x, y, z, color) {
-        const car = new THREE.Group();
-        // Car body
-        const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 4), new THREE.MeshStandardMaterial({ color: color }));
-        carBody.position.y = 0.8;
-        car.add(carBody);
-
-        // Car roof (simpler)
-        const carRoof = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.8, 2), new THREE.MeshStandardMaterial({ color: color }));
-        carRoof.position.y = 1.6;
-        car.add(carRoof);
-
-        // Wheels
-        const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 0.5, 8);
-        const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
-        
-        function addWheel(parent, x, y, z) {
-            const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
-            wheel.rotation.z = Math.PI / 2; // Lay on side
-            wheel.position.set(x, y, z);
-            parent.add(wheel);
-        }
-
-        addWheel(car, -1, 0.4, 1.5); // Front left
-        addWheel(car, 1, 0.4, 1.5);  // Front right
-        addWheel(car, -1, 0.4, -1.5); // Back left
-        addWheel(car, 1, 0.4, -1.5);  // Back right
-
-        car.position.set(x, y, z);
-        scene.add(car);
-    }
-
-    // Place some cars
-    createCar(10, 0, -20, 0x0000ff); // Blue car
-    createCar(-15, 0, 0, 0xff0000);  // Red car
-    createCar(30, 0, 10, 0x00ff00);  // Green car
-    createCar(-5, 0, -60, 0xffff00); // Yellow car
-
-
-    // --- INPUT & LOGIC ---
+    // --- LOGIC ---
     const keys = {};
     let velocity = 0;
-    window.addEventListener('keydown', (e) => {
-        keys[e.key.toLowerCase()] = true;
-        // Upgrade Keys
-        if(e.key.toLowerCase() === 'u' && gameState.money >= 50) {
-            gameState.money -= 50;
-            gameState.speedLevel++;
-            updateUI();
-        }
-        if(e.key.toLowerCase() === 'i' && gameState.money >= 40) {
-            gameState.money -= 40;
-            gameState.maxBag += 2;
-            updateUI();
-        }
-    });
+    window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
     window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
 
     function updateUI() {
@@ -150,43 +135,57 @@
     function animate() {
         requestAnimationFrame(animate);
 
-        // Movement with Speed Scaling
-        let accel = 0.005 + (gameState.speedLevel * 0.005);
+        // Movement
+        let accel = 0.006 * gameState.speedLevel;
         if (keys['w']) velocity += accel;
         if (keys['s']) velocity -= accel;
-        velocity *= 0.96; // Friction
-        
-        if (keys['a']) player.rotation.y += 0.04;
-        if (keys['d']) player.rotation.y -= 0.04;
+        velocity *= 0.96;
+        if (keys['a']) player.rotation.y += 0.05;
+        if (keys['d']) player.rotation.y -= 0.05;
         player.translateZ(velocity);
 
-        // Camera
-        const camPos = new THREE.Vector3(0, 6, -12).applyMatrix4(player.matrixWorld);
-        camera.position.lerp(camPos, 0.1);
+        // NPC Car Movement
+        traffic.forEach(car => {
+            car.mesh.position.z += car.speed;
+            if (car.mesh.position.z > 100) car.mesh.position.z = -100;
+        });
+
+        // Camera Smooth Follow
+        const camOffset = new THREE.Vector3(0, 8, -15).applyMatrix4(player.matrixWorld);
+        camera.position.lerp(camOffset, 0.1);
         camera.lookAt(player.position);
 
-        // Collision Check: Store
-        if (player.position.distanceTo(store.position) < 10) {
-            if (gameState.bagItems < gameState.maxBag) {
-                gameState.bagItems = gameState.maxBag; // Fill bag
-                document.getElementById('quest-text').innerText = "Bag Full! Deliver to the Blue House.";
-                updateUI();
+        // UI Labels Positioning
+        labels.forEach(label => {
+            const vector = label.position.clone().project(camera);
+            if(vector.z < 1) {
+                label.element.style.display = 'block';
+                const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (-(vector.y * 0.5 - 0.5) * window.innerHeight);
+                label.element.style.transform = `translate(${x}px, ${y}px)`;
+            } else {
+                label.element.style.display = 'none';
             }
+        });
+
+        // Interactions
+        if (player.position.distanceTo(store.position) < 15 && gameState.bagItems < gameState.maxBag) {
+            gameState.bagItems = gameState.maxBag;
+            document.getElementById('quest-text').innerText = "Deliver to a neighbor's house!";
+            updateUI();
         }
 
-        // Collision Check: Neighbor's House
-        if (player.position.distanceTo(house.position) < 8) {
-            if (gameState.bagItems > 0) {
-                gameState.money += (gameState.bagItems * 10);
+        neighbors.forEach(n => {
+            if (player.position.distanceTo(n.position) < 10 && gameState.bagItems > 0) {
+                gameState.money += 20;
                 gameState.bagItems = 0;
-                document.getElementById('quest-text').innerText = "Success! Go back to store for more.";
+                document.getElementById('quest-text').innerText = "Thanks! Get more at the Store.";
                 updateUI();
             }
-        }
+        });
 
         renderer.render(scene, camera);
     }
-
     animate();
 </script>
 </body>

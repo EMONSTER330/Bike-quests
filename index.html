@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bike Quest: Delivery Hero</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #fff; background: rgba(0,0,0,0.8); padding: 20px; border: 2px solid #00ffcc; border-radius: 5px; width: 250px; }
+        #inventory { position: absolute; bottom: 20px; right: 20px; color: #ff00ff; background: rgba(0,0,0,0.8); padding: 15px; border: 2px solid #ff00ff; }
+        .stat { color: #ffff00; font-weight: bold; }
+        .controls { font-size: 12px; color: #aaa; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div style="font-size: 18px; border-bottom: 1px solid #00ffcc; margin-bottom: 10px;">QUEST LOG</div>
+        <div id="quest-text">Go to the Store!</div>
+        <p>Wallet: $<span id="money" class="stat">0</span></p>
+        <p>Bike Speed: <span id="speed-lvl" class="stat">1</span></p>
+        <div class="controls">
+            [WASD] Ride | [U] Upgrade Bike ($50)<br>[I] Upgrade Bag ($40)
+        </div>
+    </div>
+    <div id="inventory">
+        <strong>BACKPACK</strong><br>
+        Items: <span id="storage-count">0</span> / <span id="max-storage">3</span>
+    </div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+
+<script type="module">
+    import * as THREE from 'three';
+
+    // --- GAME STATE ---
+    let gameState = {
+        money: 0,
+        bagItems: 0,
+        maxBag: 3,
+        speedLevel: 1,
+        atStore: false,
+        questActive: true
+    };
+
+    // --- SCENE SETUP ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Light
+    const light = new THREE.DirectionalLight(0xffffff, 1.2);
+    light.position.set(10, 20, 10);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x606060));
+
+    // Ground & Roads
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshStandardMaterial({ color: 0x228b22 }));
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+
+    // The Grocery Store (Yellow)
+    const store = new THREE.Mesh(new THREE.BoxGeometry(15, 8, 15), new THREE.MeshStandardMaterial({ color: 0xffdb58 }));
+    store.position.set(40, 4, -50);
+    scene.add(store);
+
+    // Neighbor's House (Blue - Delivery Point)
+    const house = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 10), new THREE.MeshStandardMaterial({ color: 0x4169e1 }));
+    house.position.set(-30, 3, 20);
+    scene.add(house);
+
+    // --- PLAYER ---
+    const player = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.5, 0.8), new THREE.MeshStandardMaterial({ color: 0xff4444 }));
+    body.position.y = 1.5;
+    player.add(body);
+    const bikeBase = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 1.8), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+    bikeBase.position.y = 0.5;
+    player.add(bikeBase);
+    scene.add(player);
+
+    // --- CARS (New!) ---
+    function createCar(x, y, z, color) {
+        const car = new THREE.Group();
+        // Car body
+        const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 4), new THREE.MeshStandardMaterial({ color: color }));
+        carBody.position.y = 0.8;
+        car.add(carBody);
+
+        // Car roof (simpler)
+        const carRoof = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.8, 2), new THREE.MeshStandardMaterial({ color: color }));
+        carRoof.position.y = 1.6;
+        car.add(carRoof);
+
+        // Wheels
+        const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 0.5, 8);
+        const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+        
+        function addWheel(parent, x, y, z) {
+            const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+            wheel.rotation.z = Math.PI / 2; // Lay on side
+            wheel.position.set(x, y, z);
+            parent.add(wheel);
+        }
+
+        addWheel(car, -1, 0.4, 1.5); // Front left
+        addWheel(car, 1, 0.4, 1.5);  // Front right
+        addWheel(car, -1, 0.4, -1.5); // Back left
+        addWheel(car, 1, 0.4, -1.5);  // Back right
+
+        car.position.set(x, y, z);
+        scene.add(car);
+    }
+
+    // Place some cars
+    createCar(10, 0, -20, 0x0000ff); // Blue car
+    createCar(-15, 0, 0, 0xff0000);  // Red car
+    createCar(30, 0, 10, 0x00ff00);  // Green car
+    createCar(-5, 0, -60, 0xffff00); // Yellow car
+
+
+    // --- INPUT & LOGIC ---
+    const keys = {};
+    let velocity = 0;
+    window.addEventListener('keydown', (e) => {
+        keys[e.key.toLowerCase()] = true;
+        // Upgrade Keys
+        if(e.key.toLowerCase() === 'u' && gameState.money >= 50) {
+            gameState.money -= 50;
+            gameState.speedLevel++;
+            updateUI();
+        }
+        if(e.key.toLowerCase() === 'i' && gameState.money >= 40) {
+            gameState.money -= 40;
+            gameState.maxBag += 2;
+            updateUI();
+        }
+    });
+    window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
+    function updateUI() {
+        document.getElementById('money').innerText = gameState.money;
+        document.getElementById('storage-count').innerText = gameState.bagItems;
+        document.getElementById('max-storage').innerText = gameState.maxBag;
+        document.getElementById('speed-lvl').innerText = gameState.speedLevel;
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+
+        // Movement with Speed Scaling
+        let accel = 0.005 + (gameState.speedLevel * 0.005);
+        if (keys['w']) velocity += accel;
+        if (keys['s']) velocity -= accel;
+        velocity *= 0.96; // Friction
+        
+        if (keys['a']) player.rotation.y += 0.04;
+        if (keys['d']) player.rotation.y -= 0.04;
+        player.translateZ(velocity);
+
+        // Camera
+        const camPos = new THREE.Vector3(0, 6, -12).applyMatrix4(player.matrixWorld);
+        camera.position.lerp(camPos, 0.1);
+        camera.lookAt(player.position);
+
+        // Collision Check: Store
+        if (player.position.distanceTo(store.position) < 10) {
+            if (gameState.bagItems < gameState.maxBag) {
+                gameState.bagItems = gameState.maxBag; // Fill bag
+                document.getElementById('quest-text').innerText = "Bag Full! Deliver to the Blue House.";
+                updateUI();
+            }
+        }
+
+        // Collision Check: Neighbor's House
+        if (player.position.distanceTo(house.position) < 8) {
+            if (gameState.bagItems > 0) {
+                gameState.money += (gameState.bagItems * 10);
+                gameState.bagItems = 0;
+                document.getElementById('quest-text').innerText = "Success! Go back to store for more.";
+                updateUI();
+            }
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    animate();
+</script>
+</body>
+</html>
